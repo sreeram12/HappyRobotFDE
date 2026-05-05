@@ -179,7 +179,7 @@ The system as built is the foundation. Everything above is tuning, integration, 
 ## Links
 
 - **Live dashboard:** URL provided in the submission email (kept out of the public repo to avoid public indexing)
-- **Code repository:** [link to be added once pushed]
+- **Code repository:** https://github.com/sreeram12/HappyRobotFDE
 - **HappyRobot workflow:** [https://platform.happyrobot.ai/fdesreeramsandrapati/workflows/qi4lcsb4k3zj/editor/ngloab75iopl](https://platform.happyrobot.ai/fdesreeramsandrapati/workflows/qi4lcsb4k3zj/editor/ngloab75iopl) (FDE Assessment, dev environment — HappyRobot login required)
 - **Walkthrough video:** [link to be added]
 
