@@ -1,0 +1,22 @@
+# Internal docs — preserved locally, not part of the deliverable
+_internal/
+
+# Original challenge PDF
+*.pdf
+
+# Screenshots
+*.png
+
+# macOS
+.DS_Store
+
+# Python (also covered by backend/.gitignore but included for safety)
+__pycache__/
+*.pyc
+.venv/
+.env
+*.db
+
+# Claude / tooling
+.claude/
+.codesight/

@@ -1,0 +1,1037 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Acme Logistics — Carrier Sales</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          colors: {
+            ink: {
+              900: '#0b0f17', 700: '#1f2937', 500: '#475569',
+              400: '#64748b', 300: '#94a3b8', 200: '#cbd5e1',
+              100: '#e2e8f0', 50: '#f1f5f9',
+            },
+            paper: '#fafbfc',
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    body { font-feature-settings: "cv02", "cv03", "cv04", "cv11"; -webkit-font-smoothing: antialiased; }
+    .num { font-variant-numeric: tabular-nums; }
+    .pulse-dot { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+    .row-divider > *:not(:last-child) { border-bottom: 1px solid #e2e8f0; }
+    .expandable[data-open="true"] .chevron { transform: rotate(90deg); }
+    .expandable[data-open="true"] .detail { display: block; }
+    .detail { display: none; }
+  </style>
+</head>
+<body class="bg-paper text-ink-900 font-sans antialiased min-h-screen">
+
+<!-- Header -->
+<header class="border-b border-ink-100 bg-white sticky top-0 z-30">
+  <div class="max-w-[1320px] mx-auto px-8 py-4 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="w-8 h-8 rounded-lg bg-ink-900 flex items-center justify-center">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M5 18H3v-7l2-5h11l3 5v7h-2"/>
+          <circle cx="7" cy="18" r="2"/>
+          <circle cx="17" cy="18" r="2"/>
+        </svg>
+      </div>
+      <div>
+        <div class="text-[15px] font-semibold leading-tight">Acme Logistics</div>
+        <div class="text-[11px] text-ink-400 leading-tight">Carrier Sales · AI Supervisor</div>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-4">
+      <div class="flex bg-ink-50 rounded-lg p-0.5 text-[12px] font-medium" id="timeframeNav">
+        <button data-tf="today" class="tf-btn px-3 py-1 rounded-md transition">Today</button>
+        <button data-tf="7d" class="tf-btn px-3 py-1 rounded-md transition bg-white shadow-sm">Week</button>
+        <button data-tf="30d" class="tf-btn px-3 py-1 rounded-md transition">Month</button>
+        <button data-tf="all" class="tf-btn px-3 py-1 rounded-md transition">All</button>
+      </div>
+      <div class="flex items-center gap-2 text-[12px] text-ink-500">
+        <div class="w-1.5 h-1.5 rounded-full bg-emerald-500 pulse-dot"></div>
+        <span>Live</span>
+        <span class="text-ink-300">·</span>
+        <span id="lastUpdated">—</span>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main class="max-w-[1320px] mx-auto px-8 py-8 space-y-10">
+
+  <!-- HERO: Revenue + Lost Revenue -->
+  <section>
+    <div class="grid grid-cols-12 gap-6">
+      <div class="col-span-12 lg:col-span-7 bg-white border border-ink-100 rounded-xl p-8">
+        <div class="text-[12px] font-medium uppercase tracking-wider text-ink-400 mb-3 flex items-center gap-1.5">
+          Revenue Booked
+          <span class="text-ink-300 cursor-help font-normal" title="Total dollars in loads booked across the selected window. What the agent locked in for the team.">ⓘ</span>
+        </div>
+        <div class="flex items-baseline gap-4 flex-wrap">
+          <div class="text-[64px] font-bold leading-none tracking-tight num" id="heroRevenue">$0</div>
+          <div class="text-[14px] font-medium" id="heroDelta"></div>
+        </div>
+        <div class="mt-2 text-[13px] text-ink-500" id="heroSubtext">No calls in selected window</div>
+
+        <div class="mt-8 grid grid-cols-3 gap-6 pt-6 border-t border-ink-100">
+          <div>
+            <div class="text-[11px] text-ink-400 uppercase tracking-wider font-medium mb-1 flex items-center gap-1">
+              Rate Capture
+              <span class="text-ink-300 cursor-help font-normal" title="Average rate paid as a % of list across booked calls. 100% means we paid list (perfect hold). Higher means we conceded above list to win the load. Lower means the carrier accepted below list (a 'steal'). Closer to 100% from either side is better than far above.">ⓘ</span>
+            </div>
+            <div class="text-[22px] font-semibold num" id="kpiRateCapture">—</div>
+          </div>
+          <div>
+            <div class="text-[11px] text-ink-400 uppercase tracking-wider font-medium mb-1 flex items-center gap-1">
+              Booking Rate
+              <span class="text-ink-300 cursor-help font-normal" title="Share of carrier calls that ended in a booked load. The rest either walked on rate, didn't match an open load, or didn't pass carrier verification.">ⓘ</span>
+            </div>
+            <div class="text-[22px] font-semibold num" id="kpiBookingRate">—</div>
+          </div>
+          <div>
+            <div class="text-[11px] text-ink-400 uppercase tracking-wider font-medium mb-1">Calls Handled</div>
+            <div class="text-[22px] font-semibold num" id="kpiCalls">—</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-span-12 lg:col-span-5 bg-ink-900 text-white rounded-xl p-8 flex flex-col justify-between">
+        <div>
+          <div class="text-[12px] font-medium uppercase tracking-wider text-ink-300 mb-3 flex items-center gap-2">
+            Walked-Away Value
+            <span class="text-ink-400 cursor-help" title="Total ceiling value of loads where we held our pay limit and the carrier walked. This is discipline at work — paying more would have crossed our pay ceiling. Not lost revenue.">ⓘ</span>
+          </div>
+          <div class="text-[48px] font-bold leading-none tracking-tight num" id="walkedAwayValue">$0</div>
+          <div class="mt-2 text-[13px] text-ink-300" id="lostSubtext">No carriers walked on rate</div>
+        </div>
+
+        <div class="mt-8 pt-6 border-t border-white/10 grid grid-cols-2 gap-6">
+          <div>
+            <div class="text-[11px] text-ink-300 uppercase tracking-wider font-medium mb-1 flex items-center gap-1">
+              After-Hours Calls
+              <span class="text-ink-400 cursor-help font-normal" title="Calls that came in before 8 AM or after 6 PM. Without the agent these would have hit voicemail — pure coverage gain.">ⓘ</span>
+            </div>
+            <div class="text-[20px] font-semibold num" id="kpiAfterHours">—</div>
+            <div class="text-[10px] text-ink-300 mt-0.5">Outside business hours</div>
+          </div>
+          <div>
+            <div class="text-[11px] text-ink-300 uppercase tracking-wider font-medium mb-1 flex items-center gap-1">
+              Avg Duration
+              <span class="text-ink-400 cursor-help font-normal" title="Average call length. Unusually long calls often mean a tough negotiation; very short ones usually mean the carrier hung up early.">ⓘ</span>
+            </div>
+            <div class="text-[20px] font-semibold num" id="kpiAvgDuration">—</div>
+            <div class="text-[10px] text-ink-300 mt-0.5">Per call</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- NEEDS REVIEW QUEUE -->
+  <section>
+    <div class="flex items-end justify-between mb-4">
+      <div>
+        <h2 class="text-[18px] font-semibold tracking-tight flex items-center gap-2">
+          Needs your review
+          <span class="text-[12px] text-ink-300 cursor-help font-normal" title="Calls worth a closer look. Three reasons they show up here: the call didn't book (carrier ineligible, no matching load, walked on rate, or hung up), the agent missed something important (like skipping carrier verification), or the carrier sounded frustrated. Click 'Mark reviewed' once you've handled it.">ⓘ</span>
+        </h2>
+        <p class="text-[13px] text-ink-500 mt-0.5">Calls flagged for supervisor attention</p>
+      </div>
+      <div class="text-[12px] text-ink-400" id="flaggedCount">— flagged</div>
+    </div>
+
+    <div class="bg-white border border-ink-100 rounded-xl row-divider" id="flaggedQueue">
+      <div class="px-6 py-12 text-center text-ink-400 text-[13px]">Loading...</div>
+    </div>
+  </section>
+
+  <!-- TOP LANES (moved up per Maya) -->
+  <section>
+    <div class="flex items-end justify-between mb-4">
+      <div>
+        <h2 class="text-[18px] font-semibold tracking-tight">Top lanes by revenue</h2>
+        <p class="text-[13px] text-ink-500 mt-0.5">Where the AI is closing the most</p>
+      </div>
+    </div>
+
+    <div class="bg-white border border-ink-100 rounded-xl overflow-hidden">
+      <table class="w-full text-[13px]">
+        <thead class="bg-ink-50/50 text-[11px] uppercase tracking-wider text-ink-400 font-medium">
+          <tr>
+            <th class="text-left px-6 py-3">Lane</th>
+            <th class="text-left px-6 py-3">Equipment</th>
+            <th class="text-right px-6 py-3" title="Carrier calls about loads on this lane.">Calls</th>
+            <th class="text-right px-6 py-3" title="Loads booked vs. total calls on this lane.">Booked</th>
+            <th class="text-right px-6 py-3" title="Average rate paid vs list on this lane. 100% = paid list. Higher = conceded above list. Lower = steal (carrier asked below list). Green ≤105% (close to list), amber ≤112% (within ceiling but conceded), rose >112%.">Rate Capture</th>
+            <th class="text-right px-6 py-3" title="Total dollars booked on this lane in the selected window.">Revenue</th>
+          </tr>
+        </thead>
+        <tbody id="lanesBody" class="row-divider">
+          <tr><td colspan="6" class="px-6 py-12 text-center text-ink-400">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- AI PERFORMANCE -->
+  <section>
+    <div class="flex items-end justify-between mb-4">
+      <div>
+        <h2 class="text-[18px] font-semibold tracking-tight">Agent performance</h2>
+        <p class="text-[13px] text-ink-500 mt-0.5">How the agent is handling carriers across calls</p>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-12 gap-6">
+      <!-- Volume + Revenue trend -->
+      <div class="col-span-12 lg:col-span-7 bg-white border border-ink-100 rounded-xl p-6">
+        <div class="flex items-center justify-between mb-1">
+          <div class="text-[13px] font-medium text-ink-700">Calls & revenue</div>
+          <div class="flex items-center gap-3 text-[11px] text-ink-400">
+            <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-sm bg-emerald-500"></span>Revenue</span>
+            <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-sm bg-ink-300"></span>Calls</span>
+          </div>
+        </div>
+        <p class="text-[12px] text-ink-400 mb-4">Last 14 days</p>
+        <div class="h-[160px]"><canvas id="chartTrend"></canvas></div>
+      </div>
+
+      <!-- Outcome breakdown -->
+      <div class="col-span-12 lg:col-span-5 bg-white border border-ink-100 rounded-xl p-6">
+        <div class="text-[13px] font-medium text-ink-700 mb-1 flex items-center gap-1.5">
+          Call outcomes
+          <span class="text-ink-300 cursor-help font-normal" title="Each call is sorted into one of five buckets based on what happened: Booked (deal closed and transferred to your team), Rate rejected (couldn't agree on price), No load found (nothing in the book matched what they wanted), Ineligible (carrier didn't pass FMCSA verification), Hung up (caller disconnected before the call wrapped).">ⓘ</span>
+        </div>
+        <p class="text-[12px] text-ink-400 mb-4">How calls broke down in this window</p>
+        <div class="space-y-2.5" id="outcomeBars">
+          <div class="text-[12px] text-ink-400">Loading...</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-12 gap-6 mt-6">
+      <!-- Hour-of-day -->
+      <div class="col-span-12 lg:col-span-7 bg-white border border-ink-100 rounded-xl p-6">
+        <div class="text-[13px] font-medium text-ink-700 flex items-center gap-1.5">
+          Calls by hour of day
+          <span class="text-ink-300 cursor-help font-normal" title="When carrier calls come in across the day. Dark bars are during business hours (8 AM–6 PM). Indigo bars are after-hours — calls a human rep wouldn't have answered.">ⓘ</span>
+        </div>
+        <p class="text-[12px] text-ink-400 mb-4">Indigo bars = after-hours volume the AI handled without a human</p>
+        <div class="h-[160px]"><canvas id="chartHourly"></canvas></div>
+      </div>
+
+      <!-- Sentiment + Negotiation stacked -->
+      <div class="col-span-12 lg:col-span-5 space-y-6">
+        <div class="bg-white border border-ink-100 rounded-xl p-6">
+          <div class="text-[13px] font-medium text-ink-700 mb-1 flex items-center gap-1.5">
+            Carrier sentiment
+            <span class="text-ink-300 cursor-help font-normal" title="How the carrier sounded on the call. This is about tone, not outcome: a friendly carrier on a no-load call is still positive; an irritated carrier on a booked call is still negative.">ⓘ</span>
+          </div>
+          <p class="text-[12px] text-ink-400 mb-4">Negative-tone calls auto-route to your review queue.</p>
+          <div class="space-y-2.5" id="sentimentBars">
+            <div class="text-[12px] text-ink-400">Loading...</div>
+          </div>
+        </div>
+        <div class="bg-white border border-ink-100 rounded-xl p-6" id="negotiationCard">
+          <div class="text-[13px] font-medium text-ink-700 mb-1 flex items-center gap-1.5">
+            Negotiation depth
+            <span class="text-ink-300 cursor-help font-normal" title="How many counter-offer rounds happened before each call closed. 0 = carrier took our list rate right away. 3 = we walked the full schedule up to our pay ceiling. We never go past 3 rounds. Paul only concedes when the carrier moves first — if they hold firm, he holds firm too.">ⓘ</span>
+          </div>
+          <p class="text-[12px] text-ink-400 mb-4">Rounds before close or walk</p>
+          <div class="h-[120px]" id="negotiationChartWrap"><canvas id="chartNegotiation"></canvas></div>
+          <div id="negotiationEmpty" class="hidden h-[120px] flex items-center justify-center text-[12px] text-ink-400 italic">Not enough data yet</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- RECENT CALLS -->
+  <section>
+    <div class="flex items-end justify-between mb-4 flex-wrap gap-4">
+      <div>
+        <h2 class="text-[18px] font-semibold tracking-tight">Recent calls</h2>
+        <p class="text-[13px] text-ink-500 mt-0.5">Click any row to see extracted details</p>
+      </div>
+      <div class="flex items-center gap-2 text-[12px]">
+        <select id="filterOutcome" class="bg-white border border-ink-200 rounded-md px-3 py-1.5 text-ink-700">
+          <option value="">All outcomes</option>
+          <option value="booked">Booked</option>
+          <option value="rate_rejected">Rate rejected</option>
+          <option value="no_load_found">No load found</option>
+          <option value="carrier_ineligible">Ineligible</option>
+          <option value="carrier_hung_up">Hung up</option>
+        </select>
+        <select id="filterSentiment" class="bg-white border border-ink-200 rounded-md px-3 py-1.5 text-ink-700">
+          <option value="">All sentiment</option>
+          <option value="positive">Positive</option>
+          <option value="neutral">Neutral</option>
+          <option value="negative">Negative</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="bg-white border border-ink-100 rounded-xl overflow-hidden">
+      <table class="w-full text-[13px]">
+        <thead class="bg-ink-50/50 text-[11px] uppercase tracking-wider text-ink-400 font-medium">
+          <tr>
+            <th class="text-left px-6 py-3 w-32">Time</th>
+            <th class="text-left px-6 py-3">Carrier</th>
+            <th class="text-left px-6 py-3">Lane</th>
+            <th class="text-left px-6 py-3 w-28">Outcome</th>
+            <th class="text-right px-6 py-3 w-24">List</th>
+            <th class="text-right px-6 py-3 w-24">Closed</th>
+            <th class="text-right px-6 py-3 w-20">Rounds</th>
+          </tr>
+        </thead>
+        <tbody id="callsBody" class="row-divider">
+          <tr><td colspan="7" class="px-6 py-12 text-center text-ink-400">Loading...</td></tr>
+        </tbody>
+      </table>
+
+      <div class="border-t border-ink-100 px-6 py-3 flex items-center justify-between text-[12px] text-ink-500" id="callsPagination">
+        <span id="callsTotal">—</span>
+        <div class="flex items-center gap-2">
+          <button class="px-2 py-1 rounded hover:bg-ink-50 disabled:opacity-30 disabled:hover:bg-transparent" id="btnPrev" onclick="changePage(-1)" disabled>← Prev</button>
+          <span class="num" id="pageInfo">—</span>
+          <button class="px-2 py-1 rounded hover:bg-ink-50 disabled:opacity-30 disabled:hover:bg-transparent" id="btnNext" onclick="changePage(1)" disabled>Next →</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- QUALITY AUDIT (collapsed by default — supplementary, lives at the bottom) -->
+  <section>
+    <details id="auditPanel" class="bg-white border border-ink-100 rounded-xl overflow-hidden group">
+      <summary class="px-6 py-4 cursor-pointer flex items-center justify-between gap-4 list-none hover:bg-ink-50/50 transition">
+        <div class="flex items-center gap-3 min-w-0">
+          <svg class="text-ink-400 transition-transform group-open:rotate-90 flex-shrink-0" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="9 18 15 12 9 6"/>
+          </svg>
+          <div>
+            <div class="text-[14px] font-semibold text-ink-900 flex items-center gap-1.5">
+              Quality audit
+              <span class="text-ink-400 cursor-help font-normal" title="Every call is auto-graded against the six things the agent should always do. The list and per-criterion pass rates are below — expand the panel to see them. High-priority misses also route to your review queue. Calls where a criterion didn't apply are skipped, not counted as fails.">ⓘ</span>
+            </div>
+            <div class="text-[12px] text-ink-500">AI-graded checks on what the agent should always do on a call</div>
+          </div>
+        </div>
+        <div class="flex-shrink-0 text-[12px]" id="auditHeaderStats">
+          <span class="text-ink-400">No graded calls yet</span>
+        </div>
+      </summary>
+      <div class="border-t border-ink-100 px-6 py-5">
+        <div id="auditPanelBody">
+          <div class="text-[12px] text-ink-400 italic py-6 text-center">Loading…</div>
+        </div>
+      </div>
+    </details>
+  </section>
+
+  <footer class="text-center text-[11px] text-ink-400 pt-8 pb-12">
+    HappyRobot Carrier Sales · Demo data refreshed every 30 seconds
+  </footer>
+</main>
+
+<script>
+  // API key is injected by the backend at /dashboard render time; never committed in source.
+  const API_KEY = '__API_KEY_PLACEHOLDER__';
+  const BASE = '';
+  let currentPage = 1;
+  let timeframe = '7d';
+  let filterOutcome = '';
+  let filterSentiment = '';
+  let chartTrend, chartHourly, chartNegotiation;
+
+  const OUTCOME_LABELS = {
+    booked: 'Booked', rate_rejected: 'Rate rejected', no_load_found: 'No load found',
+    carrier_ineligible: 'Ineligible', carrier_hung_up: 'Hung up',
+  };
+  const OUTCOME_DOT = {
+    booked: 'bg-emerald-500', rate_rejected: 'bg-rose-500', no_load_found: 'bg-amber-500',
+    carrier_ineligible: 'bg-rose-500', carrier_hung_up: 'bg-slate-400',
+  };
+  const OUTCOME_BADGE = {
+    booked: 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-600/10',
+    rate_rejected: 'bg-rose-50 text-rose-700 ring-1 ring-rose-600/10',
+    no_load_found: 'bg-amber-50 text-amber-700 ring-1 ring-amber-600/10',
+    carrier_ineligible: 'bg-rose-50 text-rose-700 ring-1 ring-rose-600/10',
+    carrier_hung_up: 'bg-slate-100 text-slate-600 ring-1 ring-slate-600/10',
+  };
+  const SENTIMENT_BADGE = {
+    positive: 'bg-emerald-50 text-emerald-700',
+    neutral: 'bg-slate-100 text-slate-600',
+    negative: 'bg-rose-50 text-rose-700',
+  };
+  const SENTIMENT_DOT = {
+    positive: 'bg-emerald-500', neutral: 'bg-slate-400', negative: 'bg-rose-500',
+  };
+
+  // Helpers ----------------------------------------------------
+  async function api(path, opts = {}) {
+    const r = await fetch(BASE + path, { ...opts, headers: { 'x-api-key': API_KEY, ...(opts.headers || {}) } });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.json();
+  }
+
+  const fmtMoney = (v) => v == null ? '—' : '$' + Number(v).toLocaleString('en-US', { maximumFractionDigits: 0 });
+  const fmtPct = (v) => v == null ? '—' : Number(v).toFixed(1) + '%';
+  const fmtDuration = (sec) => {
+    if (sec == null) return '—';
+    const m = Math.floor(sec/60), s = Math.round(sec%60);
+    return m + 'm ' + s + 's';
+  };
+  const fmtTime = (iso) => {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    const today = new Date();
+    if (d.toDateString() === today.toDateString()) {
+      return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+    }
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) +
+           ', ' + d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+  };
+  const ratePct = (agreed, listed) => {
+    if (!agreed || !listed) return null;
+    return Math.round(agreed / listed * 100);
+  };
+  const pluralize = (n, singular, plural) => `${n} ${n === 1 ? singular : (plural || singular + 's')}`;
+  const laneStr = (c) => {
+    if (!c.lane_origin || !c.lane_destination) return null;
+    const o = c.lane_origin.split(',')[0];
+    const d = c.lane_destination.split(',')[0];
+    return `${o} → ${d}`;
+  };
+
+  // KPIs --------------------------------------------------------
+  function renderHero(metrics) {
+    document.getElementById('heroRevenue').textContent = fmtMoney(metrics.revenue_captured);
+
+    const subtext = metrics.booked > 0
+      ? `${pluralize(metrics.booked, 'load')} booked of ${pluralize(metrics.total_calls, 'call')}`
+      : `${pluralize(metrics.total_calls, 'call')} in window`;
+    document.getElementById('heroSubtext').textContent = subtext;
+
+    // Hide delta slot — we don't have prior-period comparison data wired up
+    document.getElementById('heroDelta').innerHTML = '';
+
+    document.getElementById('kpiRateCapture').textContent = fmtPct(metrics.avg_rate_capture_pct);
+    document.getElementById('kpiBookingRate').textContent = fmtPct(metrics.booking_rate_pct);
+    document.getElementById('kpiCalls').textContent = metrics.total_calls;
+
+    // Lost revenue card
+    document.getElementById('walkedAwayValue').textContent = fmtMoney(metrics.lost_revenue);
+    const lostCount = metrics.outcomes?.rate_rejected || 0;
+    document.getElementById('lostSubtext').textContent = lostCount > 0
+      ? `Pay ceiling we held on ${pluralize(lostCount, 'call')} that walked`
+      : 'No carriers walked on rate';
+
+    const ahPct = metrics.after_hours_pct ?? 0;
+    const ahCount = metrics.after_hours_count ?? 0;
+    document.getElementById('kpiAfterHours').textContent = ahCount > 0 ? `${ahCount} (${ahPct.toFixed(0)}%)` : '0';
+    document.getElementById('kpiAvgDuration').textContent = fmtDuration(metrics.avg_call_duration_sec);
+  }
+
+  // Distribution bars ------------------------------------------
+  function renderDistBars(elId, data, labelMap, total, dotMap) {
+    const el = document.getElementById(elId);
+    const entries = Object.entries(data || {}).sort((a,b) => b[1] - a[1]);
+    if (entries.length === 0) {
+      el.innerHTML = '<div class="text-[12px] text-ink-400">No data yet</div>';
+      return;
+    }
+    el.innerHTML = entries.map(([k, v]) => {
+      const pct = total > 0 ? (v / total * 100) : 0;
+      const dotClass = dotMap[k] || 'bg-slate-400';
+      return `
+        <div>
+          <div class="flex items-center justify-between text-[12px] mb-1">
+            <div class="flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full ${dotClass}"></span>
+              <span class="text-ink-700 font-medium">${labelMap[k] || k}</span>
+            </div>
+            <span class="num text-ink-500">${v} <span class="text-ink-400">·  ${pct.toFixed(0)}%</span></span>
+          </div>
+          <div class="h-1.5 bg-ink-100 rounded-full overflow-hidden">
+            <div class="h-full ${dotClass}" style="width: ${pct}%"></div>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  // Charts -----------------------------------------------------
+  function initCharts() {
+    chartTrend = new Chart(document.getElementById('chartTrend'), {
+      type: 'bar',
+      data: {
+        labels: [],
+        datasets: [
+          {
+            label: 'Revenue', data: [],
+            backgroundColor: 'rgba(16,185,129,0.85)', borderRadius: 4,
+            yAxisID: 'y', order: 2,
+          },
+          {
+            label: 'Calls', data: [], type: 'line',
+            borderColor: '#94a3b8', backgroundColor: 'transparent', tension: 0.35,
+            yAxisID: 'y1', pointRadius: 3, pointBackgroundColor: '#94a3b8', order: 1,
+          },
+        ],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false } },
+        scales: {
+          x: { grid: { display: false }, ticks: { color: '#94a3b8', font: { size: 10 } } },
+          y: {
+            position: 'left', grid: { color: '#f1f5f9' },
+            ticks: { color: '#94a3b8', font: { size: 10 },
+              callback: v => v >= 1000 ? '$' + (v/1000).toFixed(0) + 'k' : '$' + v },
+            beginAtZero: true,
+          },
+          y1: {
+            position: 'right', grid: { display: false },
+            ticks: { color: '#94a3b8', font: { size: 10 }, stepSize: 1 },
+            beginAtZero: true,
+          },
+        },
+      },
+    });
+
+    chartHourly = new Chart(document.getElementById('chartHourly'), {
+      type: 'bar',
+      data: {
+        // Each bar = one hour of the day (0 = midnight, 12 = noon, 23 = 11pm)
+        labels: Array.from({length: 24}, (_, i) => `${i}`),
+        datasets: [{
+          label: 'Calls',
+          data: Array(24).fill(0),
+          backgroundColor: Array.from({length: 24}, (_, i) =>
+            (i >= 8 && i < 18) ? 'rgba(31,41,55,0.85)' : 'rgba(99,102,241,0.85)'),
+          borderRadius: 3,
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              title: (items) => {
+                const h = items[0].dataIndex;
+                const ampm = h === 0 ? '12 AM' : h < 12 ? `${h} AM` : h === 12 ? '12 PM' : `${h - 12} PM`;
+                return `${ampm}`;
+              },
+              label: (ctx) => `${ctx.parsed.y} call${ctx.parsed.y === 1 ? '' : 's'}`,
+            }
+          }
+        },
+        scales: {
+          x: {
+            title: { display: true, text: 'Hour of day', color: '#94a3b8', font: { size: 10 }, padding: { top: 6 } },
+            grid: { display: false },
+            ticks: {
+              color: '#94a3b8', font: { size: 10 }, maxRotation: 0,
+              callback: function(_, i) {
+                // Only label every 3 hours, and use AM/PM for clarity
+                if (i % 3 !== 0) return '';
+                if (i === 0) return '12 AM';
+                if (i < 12) return `${i} AM`;
+                if (i === 12) return '12 PM';
+                return `${i - 12} PM`;
+              }
+            }
+          },
+          y: {
+            title: { display: true, text: 'Calls', color: '#94a3b8', font: { size: 10 } },
+            grid: { color: '#f1f5f9' },
+            ticks: { color: '#94a3b8', font: { size: 10 }, stepSize: 1 },
+            beginAtZero: true,
+          },
+        },
+      },
+    });
+
+    chartNegotiation = new Chart(document.getElementById('chartNegotiation'), {
+      type: 'bar',
+      data: {
+        labels: ['0', '1', '2', '3 (cap)'],
+        datasets: [{
+          data: [0,0,0,0],
+          backgroundColor: 'rgba(99,102,241,0.85)',
+          borderRadius: 3,
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: {
+            title: { display: true, text: 'Counter-offer rounds', color: '#94a3b8', font: { size: 10 }, padding: { top: 4 } },
+            grid: { display: false }, ticks: { color: '#475569', font: { size: 11 } },
+          },
+          y: {
+            title: { display: true, text: 'Calls', color: '#94a3b8', font: { size: 10 } },
+            grid: { color: '#f1f5f9' }, ticks: { color: '#94a3b8', font: { size: 10 }, stepSize: 1 }, beginAtZero: true,
+          },
+        },
+      },
+    });
+  }
+
+  function renderCharts(metrics) {
+    const vol = metrics.daily_volume || [];
+    chartTrend.data.labels = vol.map(d => {
+      const dt = new Date(d.date);
+      return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    });
+    chartTrend.data.datasets[0].data = vol.map(d => d.revenue || 0);
+    chartTrend.data.datasets[1].data = vol.map(d => d.count || 0);
+    chartTrend.update();
+
+    const hourly = metrics.hourly_distribution || [];
+    chartHourly.data.datasets[0].data = hourly.map(h => h.count);
+    chartHourly.update();
+
+    const nr = metrics.negotiation_rounds || {};
+    const nrTotal = Object.values(nr).reduce((a,b) => a + b, 0);
+    if (nrTotal < 1) {
+      // Truly empty (zero negotiating calls) — show placeholder
+      document.getElementById('negotiationChartWrap').classList.add('hidden');
+      document.getElementById('negotiationEmpty').classList.remove('hidden');
+      document.getElementById('negotiationEmpty').classList.add('flex');
+    } else {
+      document.getElementById('negotiationChartWrap').classList.remove('hidden');
+      document.getElementById('negotiationEmpty').classList.add('hidden');
+      document.getElementById('negotiationEmpty').classList.remove('flex');
+      chartNegotiation.data.datasets[0].data = ['0','1','2','3'].map(k => nr[k] || 0);
+      chartNegotiation.update();
+    }
+
+    renderDistBars('outcomeBars', metrics.outcomes, OUTCOME_LABELS, metrics.total_calls, OUTCOME_DOT);
+    renderDistBars('sentimentBars', metrics.sentiments,
+      { positive: 'Positive', neutral: 'Neutral', negative: 'Negative' },
+      metrics.total_calls, SENTIMENT_DOT);
+  }
+
+  // Flagged queue ----------------------------------------------
+  function renderFlagged(data) {
+    const el = document.getElementById('flaggedQueue');
+    document.getElementById('flaggedCount').textContent = `${data.count} ${data.count === 1 ? 'call' : 'calls'} flagged`;
+
+    const flagged = data.flagged || [];
+    if (flagged.length === 0) {
+      el.innerHTML = `
+        <div class="px-6 py-12 text-center">
+          <div class="inline-flex w-10 h-10 rounded-full bg-emerald-50 items-center justify-center mb-3">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+          </div>
+          <div class="text-[14px] font-medium text-ink-700">All clear</div>
+          <div class="text-[12px] text-ink-400 mt-1">No calls need supervisor attention right now.</div>
+        </div>
+      `;
+      return;
+    }
+
+    el.innerHTML = flagged.map((c, i) => {
+      const outcomeBadge = OUTCOME_BADGE[c.call_outcome] || OUTCOME_BADGE.carrier_hung_up;
+      const lane = laneStr(c);
+
+      // Build the lane chip line — only show if we have actual data
+      const laneChips = [];
+      if (lane) laneChips.push(`<span class="font-medium text-ink-600">${lane}</span>`);
+      if (c.lane_equipment) laneChips.push(`<span class="text-ink-500">${c.lane_equipment}</span>`);
+      if (c.loadboard_rate) laneChips.push(`<span class="text-ink-500 num">${fmtMoney(c.loadboard_rate)} list</span>`);
+      const laneRow = laneChips.length
+        ? `<div class="text-[12px] flex items-center gap-2 mt-0.5">${laneChips.join('<span class="text-ink-300">·</span>')}</div>`
+        : '';
+
+      // Sentiment indicator: negative is loud (it's a flag reason itself);
+      // positive/neutral are quiet inline metadata (so supervisor knows carrier mood
+      // without confusing it with the operational outcome).
+      let sentimentBadge = '';
+      if (c.sentiment === 'negative') {
+        sentimentBadge = `<div class="flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded-full font-medium bg-rose-50 text-rose-700 ring-1 ring-rose-600/10">
+             <span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+             Negative tone
+           </div>`;
+      } else if (c.sentiment === 'positive') {
+        sentimentBadge = `<div class="flex items-center gap-1 text-[11px] text-ink-400">
+             <span class="w-1.5 h-1.5 rounded-full bg-emerald-500/70"></span>
+             <span>Positive carrier</span>
+           </div>`;
+      } else if (c.sentiment === 'neutral') {
+        sentimentBadge = `<div class="flex items-center gap-1 text-[11px] text-ink-400">
+             <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
+             <span>Neutral tone</span>
+           </div>`;
+      }
+
+      return `
+        <div class="expandable" data-idx="${i}" data-id="${c.id}">
+          <div class="px-6 py-4 flex items-start gap-4">
+            <div class="flex-shrink-0 mt-1">
+              <div class="w-1 h-12 ${c.flag_kind === 'audit' ? 'bg-rose-400' : 'bg-amber-400'} rounded-full" title="${c.flag_kind === 'audit' ? 'Agent missed a quality check' : 'Call needs supervisor follow-up'}"></div>
+            </div>
+            <div class="flex-1 min-w-0 cursor-pointer" onclick="toggleFlagged(${i})">
+              <div class="flex items-center gap-3 flex-wrap">
+                <div class="font-semibold text-[14px] text-ink-900">${c.carrier_name || 'Unknown carrier'}</div>
+                ${c.mc_number ? `<div class="text-[11px] text-ink-400 font-mono">MC ${c.mc_number}</div>` : ''}
+                <div class="text-[11px] px-2 py-0.5 rounded-full font-medium ${outcomeBadge}">
+                  ${OUTCOME_LABELS[c.call_outcome] || c.call_outcome || 'Unknown'}
+                </div>
+                ${sentimentBadge}
+              </div>
+              ${laneRow}
+              <div class="text-[13px] text-ink-700 mt-1.5">${c.flag_reason || 'Needs review'}</div>
+            </div>
+            <div class="flex-shrink-0 flex items-center gap-3 text-[12px]">
+              <button onclick="markReviewed('${c.id}', event)" class="px-3 py-1.5 text-[12px] font-medium text-ink-700 bg-white border border-ink-200 rounded-md hover:bg-ink-50 transition">
+                Mark reviewed
+              </button>
+              <span class="text-ink-400">${fmtTime(c.created_at)}</span>
+            </div>
+          </div>
+          <div class="detail bg-ink-50/50 px-6 py-4 border-t border-ink-100">
+            ${callDetailHTML(c)}
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function toggleFlagged(i) {
+    const el = document.querySelector(`.expandable[data-idx="${i}"]`);
+    if (!el) return;
+    const open = el.getAttribute('data-open') === 'true';
+    el.setAttribute('data-open', !open);
+  }
+
+  async function markReviewed(callId, ev) {
+    if (ev) ev.stopPropagation();
+    try {
+      await api(`/calls/${callId}/review`, { method: 'POST' });
+      loadAll();
+    } catch (e) {
+      console.error('mark reviewed failed', e);
+    }
+  }
+
+  // Short labels used in the per-call grade strip + tooltip (broker-friendly,
+  // matches the longer "label" in models.py CRITERIA used by the audit panel).
+  const CRITERIA_ORDER = [
+    { id: 'fmcsa_first',       label: 'Carrier verified',     priority: 'high'   },
+    { id: 'asks_first',        label: 'Asked rate first',     priority: 'high'   },
+    { id: 'respects_ceiling',  label: 'Held the ceiling',     priority: 'high'   },
+    { id: 'confirms_carrier',  label: 'Identity confirmed',   priority: 'high'   },
+    { id: 'walks_after_3',     label: 'Negotiation cap held', priority: 'medium' },
+    { id: 'transfer_message',  label: 'Handoff complete',     priority: 'medium' },
+  ];
+
+  function gradeStripHTML(auditResults) {
+    if (!auditResults) return '';
+    let data;
+    try {
+      data = typeof auditResults === 'string' ? JSON.parse(auditResults) : auditResults;
+    } catch (e) { return ''; }
+
+    const dots = CRITERIA_ORDER.map(c => {
+      const entry = data[c.id] || {};
+      const grade = entry.grade;
+      const reason = entry.reason || '';
+      let dotClass, label;
+      if (grade === 'pass')           { dotClass = 'bg-emerald-500/70'; label = 'Pass'; }
+      else if (grade === 'fail')      { dotClass = 'bg-rose-500';        label = 'Fail'; }
+      else if (grade === 'not_applicable') { dotClass = 'bg-slate-300'; label = 'N/A'; }
+      else { dotClass = 'bg-slate-200'; label = 'Ungraded'; }
+      const sizeClass = c.priority === 'high' ? 'w-2.5 h-2.5' : 'w-2 h-2';
+      const priTag = c.priority === 'high' ? ' (high priority)' : '';
+      const tip = `${c.label}${priTag}: ${label}${reason ? ' — ' + reason : ''}`;
+      return `<span class="${sizeClass} rounded-full ${dotClass}" title="${tip.replace(/"/g,'&quot;')}"></span>`;
+    }).join('');
+
+    const fails = CRITERIA_ORDER.filter(c => data[c.id]?.grade === 'fail');
+    const failureLine = fails.length > 0
+      ? `<div class="mt-1.5 text-[11px] text-rose-700">${fails.map(c => {
+          const r = data[c.id]?.reason || '';
+          return `<div>• <span class="font-medium">${c.label}:</span> ${r || 'failed'}</div>`;
+        }).join('')}</div>`
+      : '';
+
+    return `
+      <div class="col-span-2 md:col-span-3 mt-1 pt-3 border-t border-ink-200">
+        <div class="text-ink-400 uppercase text-[10px] tracking-wider font-medium">Quality audit</div>
+        <div class="flex items-center gap-1.5 mt-1">${dots}</div>
+        ${failureLine}
+      </div>
+    `;
+  }
+
+  function callDetailHTML(c) {
+    // Only include rows with actual values
+    const rows = [
+      ['Reference', c.reference_number],
+      ['Loadboard rate', c.loadboard_rate ? fmtMoney(c.loadboard_rate) : null],
+      ['Carrier asked', c.carrier_initial_price ? fmtMoney(c.carrier_initial_price) : null],
+      ['Final rate', c.final_agreed_rate ? fmtMoney(c.final_agreed_rate) : null],
+      ['Closed vs list', (c.final_agreed_rate && c.loadboard_rate) ? ratePct(c.final_agreed_rate, c.loadboard_rate) + '%' : null],
+      ['Negotiation rounds', c.num_negotiation_rounds != null ? c.num_negotiation_rounds : null],
+      ['FMCSA eligible', c.fmcsa_eligible],
+      ['Decline reason', c.decline_reason],
+      ['Duration', c.call_duration_sec != null ? fmtDuration(c.call_duration_sec) : null],
+    ].filter(([_, v]) => v != null && v !== '—');
+
+    const transcriptLink = c.run_id
+      ? `<div class="mt-3 pt-3 border-t border-ink-200">
+           <a href="https://platform.happyrobot.ai/runs/${c.run_id}" target="_blank" rel="noopener"
+              class="text-[12px] text-indigo-600 hover:text-indigo-700 font-medium inline-flex items-center gap-1">
+             View transcript on HappyRobot
+             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+               <path d="M7 17 17 7M7 7h10v10"/>
+             </svg>
+           </a>
+         </div>`
+      : '';
+
+    const dataGrid = rows.length === 0 && !c.audit_results && !c.run_id
+      ? '<div class="text-[12px] text-ink-400">No additional detail extracted.</div>'
+      : `
+        <div class="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-3 text-[12px]">
+          ${rows.map(([k, v]) => `
+            <div>
+              <div class="text-ink-400 uppercase text-[10px] tracking-wider font-medium">${k}</div>
+              <div class="text-ink-700 font-medium num mt-0.5">${v}</div>
+            </div>
+          `).join('')}
+          ${gradeStripHTML(c.audit_results)}
+        </div>
+        ${transcriptLink}
+      `;
+    return dataGrid;
+  }
+
+  // Lanes ------------------------------------------------------
+  function renderLanes(lanes) {
+    const tbody = document.getElementById('lanesBody');
+    if (!lanes || lanes.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" class="px-6 py-12 text-center text-ink-400 text-[13px]">No lane data yet</td></tr>';
+      return;
+    }
+    tbody.innerHTML = lanes.map(l => `
+      <tr class="hover:bg-ink-50/50">
+        <td class="px-6 py-3.5 font-medium text-ink-900">${l.lane}</td>
+        <td class="px-6 py-3.5">
+          <span class="text-[11px] px-2 py-0.5 rounded-md bg-ink-100 text-ink-600 font-medium">${l.equipment_type}</span>
+        </td>
+        <td class="px-6 py-3.5 text-right num text-ink-700">${l.total_calls}</td>
+        <td class="px-6 py-3.5 text-right num text-ink-700">${l.booked} <span class="text-ink-400">/  ${l.total_calls}</span></td>
+        <td class="px-6 py-3.5 text-right num font-medium ${l.avg_rate_capture_pct == null ? 'text-ink-300' : l.avg_rate_capture_pct <= 105 ? 'text-emerald-700' : l.avg_rate_capture_pct <= 112 ? 'text-amber-700' : 'text-rose-700'}">${fmtPct(l.avg_rate_capture_pct)}</td>
+        <td class="px-6 py-3.5 text-right num font-semibold">${fmtMoney(l.revenue)}</td>
+      </tr>
+    `).join('');
+  }
+
+  // Calls table ------------------------------------------------
+  function renderCallsTable(data) {
+    const tbody = document.getElementById('callsBody');
+    const calls = data.calls || [];
+    if (calls.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="7" class="px-6 py-12 text-center text-ink-400 text-[13px]">No calls match these filters</td></tr>';
+    } else {
+      tbody.innerHTML = calls.map(c => {
+        const outcomeBadge = OUTCOME_BADGE[c.call_outcome] || OUTCOME_BADGE.carrier_hung_up;
+        const lane = laneStr(c);
+        const equipment = c.lane_equipment;
+        const laneCell = lane
+          ? `<div class="flex items-center gap-2">
+               <span class="text-ink-700 font-medium">${lane}</span>
+               ${equipment ? `<span class="text-[11px] px-1.5 py-0.5 rounded-md bg-ink-100 text-ink-600 font-medium">${equipment}</span>` : ''}
+             </div>`
+          : '<span class="text-ink-300">—</span>';
+        return `
+          <tr class="hover:bg-ink-50/50">
+            <td class="px-6 py-3.5 text-ink-500 text-[12px] num">${fmtTime(c.created_at)}</td>
+            <td class="px-6 py-3.5 font-medium text-ink-900">${c.carrier_name || '—'}</td>
+            <td class="px-6 py-3.5 text-[12px]">${laneCell}</td>
+            <td class="px-6 py-3.5">
+              <span class="text-[11px] px-2 py-0.5 rounded-full font-medium ${outcomeBadge}">${OUTCOME_LABELS[c.call_outcome] || '—'}</span>
+            </td>
+            <td class="px-6 py-3.5 text-right num text-ink-700">${fmtMoney(c.loadboard_rate)}</td>
+            <td class="px-6 py-3.5 text-right num font-semibold">${fmtMoney(c.final_agreed_rate)}</td>
+            <td class="px-6 py-3.5 text-right num text-ink-500">${c.num_negotiation_rounds ?? '—'}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    document.getElementById('callsTotal').textContent = `${pluralize(data.total, 'call')}`;
+    document.getElementById('pageInfo').textContent = `Page ${data.page} of ${data.pages || 1}`;
+    document.getElementById('btnPrev').disabled = data.page <= 1;
+    document.getElementById('btnNext').disabled = data.page >= (data.pages || 1);
+  }
+
+  function changePage(d) {
+    currentPage = Math.max(1, currentPage + d);
+    loadCalls();
+  }
+
+  // Audit panel ------------------------------------------------
+  function renderAudit(data) {
+    const header = document.getElementById('auditHeaderStats');
+    const body = document.getElementById('auditPanelBody');
+    const n = data.n_graded || 0;
+    const overall = data.overall_pass_rate_pct;
+    const failures = data.total_failures || 0;
+
+    // Show data as soon as we have any graded calls
+    if (n < 1) {
+      header.innerHTML = `<span class="text-ink-400">No graded calls yet</span>`;
+      body.innerHTML = `<div class="text-[13px] text-ink-400 italic py-6 text-center">No calls have been graded yet — audits will appear here once carrier calls complete.</div>`;
+      return;
+    }
+
+    // Closed-state header strip
+    const passColor = overall >= 90 ? 'text-emerald-700' : overall >= 75 ? 'text-amber-700' : 'text-rose-700';
+    const criteriaCount = (data.criteria || []).length;
+    header.innerHTML = `
+      <div class="flex items-center gap-3">
+        <span class="num font-semibold ${passColor}">${overall != null ? overall.toFixed(0) + '% pass' : '—'}</span>
+        <span class="text-ink-300">·</span>
+        <span class="text-ink-500">${criteriaCount} ${criteriaCount === 1 ? 'criterion' : 'criteria'}</span>
+        <span class="text-ink-300">·</span>
+        <span class="num ${failures > 0 ? 'text-rose-700 font-medium' : 'text-ink-500'}">${failures} ${failures === 1 ? 'failure' : 'failures'}</span>
+      </div>
+    `;
+
+    // Sort by severity (high first), then fail rate (most failures first)
+    const PRIORITY_ORDER = { high: 0, medium: 1, low: 2 };
+    const sorted = [...data.criteria].sort((a, b) => {
+      const p = PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority];
+      if (p !== 0) return p;
+      return (b.fail || 0) - (a.fail || 0);
+    });
+
+    body.innerHTML = `
+      <div class="space-y-3.5">
+        ${sorted.map(c => {
+          const denom = (c.pass || 0) + (c.fail || 0);
+          const pct = c.pass_rate_pct;
+          const isHigh = c.priority === 'high';
+          const railColor = isHigh
+            ? (c.fail > 0 ? 'bg-rose-400' : 'bg-emerald-500/40')
+            : 'bg-slate-200';
+          const barColor = pct == null
+            ? 'bg-slate-200'
+            : pct >= 95 ? 'bg-emerald-500'
+            : pct >= 80 ? 'bg-amber-500'
+            : 'bg-rose-500';
+          return `
+            <div class="flex items-center gap-3">
+              <div class="w-1 h-10 rounded-full ${railColor} flex-shrink-0" title="${isHigh ? 'High priority' : 'Medium priority'}"></div>
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center justify-between mb-1.5 gap-3">
+                  <div class="text-[13px] font-medium text-ink-900 truncate">
+                    <span class="text-[10px] uppercase tracking-wider font-semibold ${isHigh ? 'text-rose-600' : 'text-ink-400'} mr-2">${c.priority}</span>
+                    ${c.label}
+                  </div>
+                  <div class="text-[12px] num text-ink-500 flex-shrink-0">
+                    <span class="${pct == null ? 'text-ink-300' : pct < 80 ? 'text-rose-700 font-medium' : 'text-ink-700 font-medium'}">${pct == null ? 'N/A' : pct.toFixed(0) + '%'}</span>
+                    <span class="text-ink-400">·</span>
+                    ${c.fail > 0 ? `<span class="text-rose-600 font-medium">${c.fail} ${c.fail === 1 ? 'fail' : 'fails'}</span>` : `<span class="text-ink-400">0 fails</span>`}
+                    ${c.not_applicable > 0 ? `<span class="text-ink-300">· ${c.not_applicable} N/A</span>` : ''}
+                  </div>
+                </div>
+                <div class="h-1.5 bg-ink-100 rounded-full overflow-hidden">
+                  <div class="h-full ${barColor} transition-all" style="width: ${pct != null ? pct : 0}%"></div>
+                </div>
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+      <div class="mt-5 pt-4 border-t border-ink-100 text-[11px] text-ink-400 flex justify-between">
+        <span>Based on ${n} graded ${n === 1 ? 'call' : 'calls'} in this window · steps that didn't apply aren't counted</span>
+        <span>Misses auto-route to Needs your review</span>
+      </div>
+    `;
+  }
+
+  // Loaders ----------------------------------------------------
+  async function loadAll() {
+    try {
+      const [m, flagged, lanes, audit] = await Promise.all([
+        api(`/dashboard/metrics?timeframe=${timeframe}`),
+        api('/dashboard/flagged?limit=5'),
+        api(`/dashboard/lane-stats?timeframe=${timeframe}`),
+        api(`/dashboard/audit-summary?timeframe=${timeframe}`),
+      ]);
+      renderHero(m);
+      renderCharts(m);
+      renderFlagged(flagged);
+      renderLanes(lanes.lanes);
+      renderAudit(audit);
+      document.getElementById('lastUpdated').textContent = 'updated ' + new Date().toLocaleTimeString();
+    } catch (e) { console.error('loadAll', e); }
+    loadCalls();
+  }
+
+  async function loadCalls() {
+    try {
+      const params = new URLSearchParams({ page: currentPage, limit: 15, timeframe });
+      if (filterOutcome) params.set('outcome', filterOutcome);
+      if (filterSentiment) params.set('sentiment', filterSentiment);
+      const data = await api(`/dashboard/calls?${params}`);
+      renderCallsTable(data);
+    } catch (e) { console.error('loadCalls', e); }
+  }
+
+  // Wire-up ----------------------------------------------------
+  document.querySelectorAll('.tf-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      timeframe = btn.dataset.tf;
+      document.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('bg-white', 'shadow-sm'));
+      btn.classList.add('bg-white', 'shadow-sm');
+      currentPage = 1;
+      loadAll();
+    });
+  });
+
+  document.getElementById('filterOutcome').addEventListener('change', e => {
+    filterOutcome = e.target.value; currentPage = 1; loadCalls();
+  });
+  document.getElementById('filterSentiment').addEventListener('change', e => {
+    filterSentiment = e.target.value; currentPage = 1; loadCalls();
+  });
+
+  initCharts();
+  loadAll();
+  setInterval(loadAll, 30000);
+</script>
+
+</body>
+</html>
